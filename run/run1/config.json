@@ -1,0 +1,29 @@
+{
+	"p2p": {
+		"identity": {
+			"peer_id": "12D3KooWJGCfGHBWkFS3DgZQZ9WdAQ29BkuXXRcJhpYiWuqAPVVC",
+			"priv_key": "z23jhTeQfP2gHN2tQMqbTJcSTxXZwA18YLg1c7QQ8nm9i2HZ3hYRh2sHE8W7F8MUFuC4zXuzEDZqKc44KG5sQNBT5xXySi"
+		},
+		"bootstrap": [],
+		"listen": [
+			"/ip4/10.0.0.233/tcp/10040"
+		],
+		"secret": "2fa6063a945f2ae5fc9c40648601e8fe0de73466463743ea198d74eee67a97fd",
+		"enable_relay_hop": true,
+		"low_water": 100,
+		"high_water": 400,
+		"grace_period": 120000000000,
+		"enable_mdns": true
+	},
+	"ipfs": "/ip4/127.0.0.1/tcp/5001",
+	"db_path": "cluster-ds",
+	"raft": {
+		"peers": [
+			"12D3KooWH6rowPV3eVc3QjiMRDAWva5LpYrt2optPQZiwUm5jQ6c",
+			"12D3KooWJGCfGHBWkFS3DgZQZ9WdAQ29BkuXXRcJhpYiWuqAPVVC",
+			"12D3KooWJbkbLcZas8LxmmLomJpKZ69oJA1CX8AeNcqPBphWVHgM"
+		],
+		"log_level": "DEBUG"
+	},
+	"port": 10086
+}

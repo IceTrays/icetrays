@@ -1,0 +1,35 @@
+// protoc --gogo_out=. --go-grpc_out=.  consensus/rpc/fs.proto
+syntax = "proto3";
+option go_package = "";
+package pb;
+// The greeting service definition.
+service RemoteExecute {
+  rpc Execute (Instruction) returns (Empty) {}
+}
+
+message Ctx {
+  string pre = 1;
+  string next = 2;
+}
+
+message Empty{}
+
+
+message Instruction {
+  enum Code {
+    CP = 0;
+    MV = 1;
+    RM = 2;
+    MKDIR = 3;
+    Ls = 4;
+  };
+  Code code = 1;
+  repeated string params = 2;
+  bytes node = 3;
+}
+
+message Instructions {
+  repeated Instruction instruction = 1;
+  Ctx ctx = 2;
+}
+
