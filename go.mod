@@ -3,6 +3,7 @@ module github.com/icetrays/icetrays
 go 1.16
 
 require (
+	github.com/centrifuge/go-substrate-rpc-client/v3 v3.0.0
 	github.com/dgraph-io/badger/v3 v3.2011.1
 	github.com/gin-gonic/gin v1.7.2
 	github.com/gogo/protobuf v1.3.2
@@ -34,3 +35,5 @@ require (
 	go.uber.org/fx v1.13.1
 	google.golang.org/grpc v1.38.0
 )
+
+replace github.com/centrifuge/go-substrate-rpc-client/v3 => github.com/icetrays/go-substrate-rpc-client/v3 v3.0.1-0.20210530144125-db499b9b5408
