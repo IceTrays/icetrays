@@ -1,26 +1,35 @@
-package main
+package crust
 
 import (
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/ipfs/go-cid"
+	"math/big"
 	"sync"
+	"time"
 
 	gsrpc "github.com/centrifuge/go-substrate-rpc-client/v3"
 	"github.com/centrifuge/go-substrate-rpc-client/v3/signature"
 	"github.com/centrifuge/go-substrate-rpc-client/v3/types"
 )
 
+var (
+	ErrCrustUpgraded          = errors.New("may be crust upgraded")
+	ErrBalanceNotEnough       = errors.New("balance not enough")
+	ErrSubmitExtrinsicTimeout = errors.New("submit extrinsic timeout")
+)
+
 var fileInfoKeyPrefix, _ = hex.DecodeString("5ebf094108ead4fefa73f7a3b13cb4a7b3b78f30e9b952d60249b22fcdaaa76dac896fb8ba4ecabfb8")
 var CrustNetworkID uint8 = 42
 
 type Client struct {
-	keyPair     signature.KeyringPair
-	api         *gsrpc.SubstrateAPI
-	recordNonce uint64
-	genesisHash types.Hash
-	mtx         sync.Mutex
+	keyPair       signature.KeyringPair
+	api           *gsrpc.SubstrateAPI
+	genesisHash   types.Hash
+	mtx           sync.Mutex
+	meta          *types.Metadata
+	submitTimeout time.Duration
 }
 
 /*
@@ -41,55 +50,67 @@ type FileInfo struct {
 	ReportedReplicaCount types.U32
 }
 
-func (c *Client) PlaceStorageOrder(fileCid cid.Cid, fileSize uint64, tip uint64) (*types.Hash, error) {
+func (c *Client) PlaceStorageOrder(fileCid cid.Cid, fileSize uint64, tip uint64) error {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
 	meta, err := c.api.RPC.State.GetMetadataLatest()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	call, err := types.NewCall(meta, "Market.place_storage_order", fileCid.String(), fileSize, types.NewUCompactFromUInt(tip))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	ext := types.NewExtrinsic(call)
 	rv, err := c.api.RPC.State.GetRuntimeVersionLatest()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	key, err := types.CreateStorageKey(meta, "System", "Account", c.keyPair.PublicKey, nil)
+	accountInfo, err := c.getAccountInfo()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var accountInfo types.AccountInfo
-	ok, err := c.api.RPC.State.GetStorageLatest(key, &accountInfo)
-
-	if err != nil || !ok {
-		return nil, err
+	orderPrice, err := c.getOrderPrice(fileSize)
+	if err != nil {
+		return err
 	}
-	c.mtx.Lock()
-	nonce := max(uint64(accountInfo.Nonce), c.recordNonce)
-	c.recordNonce = nonce + 1
-	c.mtx.Unlock()
+	if orderPrice.Cmp(accountInfo.Data.Free.Int) > 0 {
+		return ErrBalanceNotEnough
+	}
 
 	o := types.SignatureOptions{
 		BlockHash:          c.genesisHash,
 		Era:                types.ExtrinsicEra{IsMortalEra: false},
 		GenesisHash:        c.genesisHash,
-		Nonce:              types.NewUCompactFromUInt(nonce),
+		Nonce:              types.NewUCompactFromUInt(uint64(accountInfo.Nonce)),
 		SpecVersion:        rv.SpecVersion,
 		Tip:                types.NewUCompactFromUInt(0),
 		TransactionVersion: rv.TransactionVersion,
 	}
 	err = ext.Sign(c.keyPair, o)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	hash, err := c.api.RPC.Author.SubmitExtrinsic(ext)
+
+	sub, err := c.api.RPC.Author.SubmitAndWatchExtrinsic(ext)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	return &hash, nil
+	defer sub.Unsubscribe()
+	timeOut := time.NewTimer(c.submitTimeout)
+	for {
+		select {
+		case status := <-sub.Chan():
+			// todo log
+			if status.IsInBlock {
+				return nil
+			}
+		case <-timeOut.C:
+			return ErrSubmitExtrinsicTimeout
+		}
+	}
 }
 
 func (c *Client) GetFileInfo(fileCid cid.Cid) (*FileInfo, error) {
@@ -105,6 +126,67 @@ func (c *Client) GetFileInfo(fileCid cid.Cid) (*FileInfo, error) {
 	return &fileInfo, nil
 }
 
+func (c *Client) getAccountInfo() (*types.AccountInfo, error) {
+	key, err := types.CreateStorageKey(c.meta, "System", "Account", c.keyPair.PublicKey, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var accountInfo types.AccountInfo
+	ok, err := c.api.RPC.State.GetStorageLatest(key, &accountInfo)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrCrustUpgraded
+	}
+	return &accountInfo, nil
+}
+
+func (c *Client) getOrderPrice(fileSize uint64) (*types.U128, error) {
+	fileSizeWithMB := fileSize/1024/1024 + 1
+	price, err := c.getFilePricePerMB()
+	if err != nil {
+		return nil, err
+	}
+	shouldPay := price.Mul(price.Int, big.NewInt(int64(fileSizeWithMB)))
+	fileBase, err := c.getFileBase()
+	if err != nil {
+		return nil, err
+	}
+	if shouldPay.Cmp(fileBase.Int) >= 0 {
+		return &types.U128{Int: shouldPay}, nil
+	} else {
+		return fileBase, nil
+	}
+}
+
+func (c *Client) getFileBase() (*types.U128, error) {
+	key, err := types.CreateStorageKey(c.meta, "Market", "FileBaseFee", nil, nil)
+	var fileBase types.U128
+	ok, err := c.api.RPC.State.GetStorageLatest(key, &fileBase)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrCrustUpgraded
+	}
+	return &fileBase, nil
+}
+
+func (c *Client) getFilePricePerMB() (*types.U128, error) {
+	key, err := types.CreateStorageKey(c.meta, "Market", "FilePrice", nil, nil)
+	var filePrice types.U128
+	ok, err := c.api.RPC.State.GetStorageLatest(key, &filePrice)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrCrustUpgraded
+	}
+	return &filePrice, nil
+}
+
 func max(a, b uint64) uint64 {
 	if a > b {
 		return a
@@ -112,7 +194,7 @@ func max(a, b uint64) uint64 {
 	return b
 }
 
-func NewClient(wsUrl, secret string) (*Client, error) {
+func NewClient(wsUrl, secret string, timeout time.Duration) (*Client, error) {
 	api, err := gsrpc.NewSubstrateAPI(wsUrl)
 	if err != nil {
 		return nil, err
@@ -125,158 +207,16 @@ func NewClient(wsUrl, secret string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	meta, err := api.RPC.State.GetMetadataLatest()
+	if err != nil {
+		return nil, err
+	}
 	var client = &Client{
-		keyPair:     keyPair,
-		api:         api,
-		recordNonce: 0,
-		genesisHash: genesisHash,
+		keyPair:       keyPair,
+		api:           api,
+		genesisHash:   genesisHash,
+		meta:          meta,
+		submitTimeout: timeout,
 	}
 	return client, nil
 }
-
-func main() {
-	// Display the events that occur during a transfer by sending a value to bob
-
-	// Instantiate the API
-	api, err := gsrpc.NewSubstrateAPI("wss://rocky-api.crust.network/")
-	if err != nil {
-		panic(err)
-	}
-
-	keypair, err := signature.KeyringPairFromSecret("tomorrow gun unfair damp crisp pet basket zone matrix kidney together april", 42)
-	if err != nil {
-		panic(err)
-	}
-	meta, err := api.RPC.State.GetMetadataLatest()
-	if err != nil {
-		panic(err)
-	}
-	for _, sector := range meta.AsMetadataV12.Modules {
-		fmt.Println(sector.Name)
-
-		//for _, f := range sector.Calls {
-		//	fmt.Println("	method: ", f.Name, f.Args)
-		//}
-
-		for _, item := range sector.Storage.Items {
-
-			fmt.Println(item.Type.AsMap.Key, "->", item.Type.AsMap.Value)
-			fmt.Printf("	key:    %#v, %#v, %#v \n", item.Name, item.Type.AsMap.Value, item.Documentation)
-
-		}
-	}
-
-	// Create a call, transferring 12345 units to Bob
-	//bob, err := types.NewAddressFromHexAccountID("0x8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48")
-	//if err != nil {
-	//	panic(err)
-	//}
-
-	//ccid, _ := cid.Decode("QmVCN9cXCjnuG9DUmY1wRt9E8unwtmMZzLLycb6WBEPjdZ")
-	key1, err := types.CreateStorageKey(meta, "Market", "Files", []byte("QmVCN9cXCjnuG9DUmY1wRt9E8unwtmMZzLLycb6WBEPjdZ"), nil)
-	fmt.Println("hexx", hex.EncodeToString([]byte("QmVCN9cXCjnuG9DUmY1wRt9E8unwtmMZzLLycb6WBEPjdZ")))
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("hex", key1.Hex())
-
-	key1, _ = hex.DecodeString("5ebf094108ead4fefa73f7a3b13cb4a7b3b78f30e9b952d60249b22fcdaaa76dac896fb8ba4ecabfb8")
-	key1 = append(key1, []byte("QmVCN9cXCjnuG9DUmY1wRt9E8unwtmMZzLLycb6WBEPjdZ")...)
-	kk, err := api.RPC.State.GetStorageRawLatest(key1)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("????", kk.Hex())
-	var fileInfo FileInfo
-	ok1, err := api.RPC.State.GetStorageLatest(key1, &fileInfo)
-	if err != nil || !ok1 {
-		panic(err)
-	}
-	fmt.Println(fileInfo)
-
-	key3, err := types.CreateStorageKey(meta, "System", "Account", keypair.PublicKey, nil)
-	if err != nil {
-		panic(err)
-	}
-	kk2, err := api.RPC.State.GetStorageRawLatest(key3)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("????", kk2.Hex())
-
-	amount := types.NewUCompactFromUInt(0)
-
-	c, err := types.NewCall(meta, "Market.place_storage_order", "QmVCN9cXCjnuG9DUmY1wRt9E8unwtmMZzLLycb6WBEPjdZ", uint64(17), amount)
-	if err != nil {
-		panic(err)
-	}
-
-	// Create the extrinsic
-	ext := types.NewExtrinsic(c)
-
-	genesisHash, err := api.RPC.Chain.GetBlockHash(0)
-	if err != nil {
-		panic(err)
-	}
-
-	rv, err := api.RPC.State.GetRuntimeVersionLatest()
-	if err != nil {
-		panic(err)
-	}
-
-	// Get the nonce for Alice
-	key, err := types.CreateStorageKey(meta, "System", "Account", keypair.PublicKey, nil)
-	if err != nil {
-		panic(err)
-	}
-
-	var accountInfo types.AccountInfo
-	ok, err := api.RPC.State.GetStorageLatest(key, &accountInfo)
-	if err != nil || !ok {
-		panic(err)
-	}
-
-	nonce := uint32(accountInfo.Nonce)
-
-	o := types.SignatureOptions{
-		BlockHash:          genesisHash,
-		Era:                types.ExtrinsicEra{IsMortalEra: false},
-		GenesisHash:        genesisHash,
-		Nonce:              types.NewUCompactFromUInt(uint64(nonce)),
-		SpecVersion:        rv.SpecVersion,
-		Tip:                types.NewUCompactFromUInt(0),
-		TransactionVersion: rv.TransactionVersion,
-	}
-
-	fmt.Printf("Sending %v from %#x with nonce %v\n", amount, keypair.PublicKey, nonce)
-
-	// Sign the transaction using Alice's default account
-	err = ext.Sign(keypair, o)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(types.EncodeToHexString(ext))
-
-	// Do the transfer and track the actual status
-	sub, err := api.RPC.Author.SubmitAndWatchExtrinsic(ext)
-	if err != nil {
-		panic(err)
-	}
-	defer sub.Unsubscribe()
-
-	for {
-		status := <-sub.Chan()
-		fmt.Printf("Transaction status: %#v\n", status)
-		bs, _ := status.MarshalJSON()
-		fmt.Println(string(bs))
-		if status.IsInBlock {
-			fmt.Printf("Completed at block hash: %#x\n", status.AsInBlock)
-		}
-	}
-}
-
-//0x02000000000000000100000001837423f91a07000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-
-//0x5ebf094108ead4fefa73f7a3b13cb4a7b3b78f30e9b952d60249b22fcdaaa76d682705db4aa834e900
-//0x5ebf094108ead4fefa73f7a3b13cb4a7b3b78f30e9b952d60249b22fcdaaa76d7051a818f93b1367 516d56434e396358436a6e75473944556d5931775274394538756e77746d4d5a7a4c4c79636236574245506a645a
-//0x5ebf094108ead4fefa73f7a3b13cb4a7b3b78f30e9b952d60249b22fcdaaa76dac896fb8ba4ecabfb8 516d56434e396358436a6e75473944556d5931775274394538756e77746d4d5a7a4c4c79636236574245506a645a
