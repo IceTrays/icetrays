@@ -3,7 +3,6 @@ package crust
 import (
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"github.com/ipfs/go-cid"
 	"math/big"
 	"sync"
@@ -18,6 +17,7 @@ var (
 	ErrCrustUpgraded          = errors.New("may be crust upgraded")
 	ErrBalanceNotEnough       = errors.New("balance not enough")
 	ErrSubmitExtrinsicTimeout = errors.New("submit extrinsic timeout")
+	ErrCidNotFound            = errors.New("cid not found in cust")
 )
 
 var fileInfoKeyPrefix, _ = hex.DecodeString("5ebf094108ead4fefa73f7a3b13cb4a7b3b78f30e9b952d60249b22fcdaaa76dac896fb8ba4ecabfb8")
@@ -121,7 +121,7 @@ func (c *Client) GetFileInfo(fileCid cid.Cid) (*FileInfo, error) {
 		return nil, err
 	}
 	if !ok {
-		return nil, errors.New(fmt.Sprintf("order cid: %s not found", fileCid.String()))
+		return nil, ErrCidNotFound
 	}
 	return &fileInfo, nil
 }
