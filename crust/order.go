@@ -1,12 +1,15 @@
 package crust
 
-import "github.com/ipfs/go-cid"
-
+import (
+	"github.com/centrifuge/go-substrate-rpc-client/v3/types"
+	"github.com/ipfs/go-cid"
+)
 
 type OrderStatus int
 
 const (
-	OrderStatusReady OrderStatus = iota
+	OrderStatusStart OrderStatus = iota
+	OrderStatusWaiting
 	OrderStatusAccepted
 	OrderStatusRenew
 	OrderStatusRetry
@@ -14,7 +17,15 @@ const (
 )
 
 type Order struct {
-	cid cid.Cid
-	info FileInfo
-	status OrderStatus
+	cid        cid.Cid
+	fileSize   uint64
+	height     types.BlockNumber
+	info       FileInfo
+	status     OrderStatus
+	retryTimes int
+	err        error
+}
+
+func (order *Order) SetStatus(status OrderStatus) {
+	order.status = status
 }

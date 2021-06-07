@@ -1,7 +1,6 @@
 package crust
 
 import (
-	"encoding/hex"
 	"errors"
 	"github.com/ipfs/go-cid"
 	"math/big"
@@ -20,7 +19,6 @@ var (
 	ErrCidNotFound            = errors.New("cid not found in cust")
 )
 
-var fileInfoKeyPrefix, _ = hex.DecodeString("5ebf094108ead4fefa73f7a3b13cb4a7b3b78f30e9b952d60249b22fcdaaa76dac896fb8ba4ecabfb8")
 var CrustNetworkID uint8 = 42
 
 type Client struct {
@@ -114,8 +112,20 @@ func (c *Client) PlaceStorageOrder(fileCid cid.Cid, fileSize uint64, tip uint64)
 }
 
 func (c *Client) GetFileInfo(fileCid cid.Cid) (*FileInfo, error) {
+	cidbs := []byte(fileCid.String())
+	bs := make([]byte, len(cidbs)+1)
+	// TODO no reason
+	bs[0] = byte(len(cidbs) * 4)
+	copy(bs[1:], cidbs)
+	bs = append(bs)
+
+	key, err := types.CreateStorageKey(c.meta, "Market", "Files", bs, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	var fileInfo = FileInfo{}
-	key := append(fileInfoKeyPrefix, []byte(fileCid.String())...)
+
 	ok, err := c.api.RPC.State.GetStorageLatest(key, &fileInfo)
 	if err != nil {
 		return nil, err
