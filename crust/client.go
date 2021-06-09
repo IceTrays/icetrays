@@ -197,6 +197,14 @@ func (c *Client) getFilePricePerMB() (*types.U128, error) {
 	return &filePrice, nil
 }
 
+func (c *Client) BlockNumber() (types.BlockNumber, error) {
+	header, err := c.api.RPC.Chain.GetHeaderLatest()
+	if err != nil {
+		return 0, err
+	}
+	return header.Number, nil
+}
+
 func max(a, b uint64) uint64 {
 	if a > b {
 		return a
