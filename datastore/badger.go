@@ -74,6 +74,19 @@ func (s *BadgerDB) LoadState() (string, error) {
 	return string(v), err
 }
 
+func (s *BadgerDB) Keys(prefix []byte) ([][]byte, error) {
+	tx := s.db.NewTransaction(false)
+	defer tx.Discard()
+	iter := tx.NewKeyIterator(prefix, badger.DefaultIteratorOptions)
+	defer iter.Close()
+	res := make([][]byte, 0)
+	for iter.Rewind(); iter.Valid(); iter.Next() {
+		item := iter.Item()
+		res = append(res, item.KeyCopy(nil))
+	}
+	return res, nil
+}
+
 type Txn struct {
 	*badger.Txn
 }
@@ -101,6 +114,7 @@ type kv interface {
 type DataBase interface {
 	kv
 	NewTransaction(update bool) Transaction
+	Keys(prefix []byte) ([][]byte, error)
 }
 
 type StateDB interface {

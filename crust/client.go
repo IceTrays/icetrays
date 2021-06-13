@@ -3,6 +3,7 @@ package crust
 import (
 	"errors"
 	"github.com/ipfs/go-cid"
+	"golang.org/x/xerrors"
 	"math/big"
 	"sync"
 	"time"
@@ -39,6 +40,7 @@ type Client struct {
 	reported_replica_count: 'u32',
 	replicas: 'Vec<Replica<AccountId>>',
 */
+
 type FileInfo struct {
 	FileSize             types.U64
 	ExpiredOn            types.BlockNumber
@@ -46,16 +48,24 @@ type FileInfo struct {
 	Amount               types.U128
 	Prepaid              types.U128
 	ReportedReplicaCount types.U32
+	//Replicas []Replica
 }
 
-func (c *Client) PlaceStorageOrder(fileCid cid.Cid, fileSize uint64, tip uint64) error {
+type Replica struct {
+	Who        types.Bytes
+	ValidAt    types.BlockNumber
+	Anchor     types.Text
+	IsReported types.Bool
+}
+
+func (c *Client) Call(method string, args ...interface{}) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	meta, err := c.api.RPC.State.GetMetadataLatest()
 	if err != nil {
 		return err
 	}
-	call, err := types.NewCall(meta, "Market.place_storage_order", fileCid.String(), fileSize, types.NewUCompactFromUInt(tip))
+	call, err := types.NewCall(meta, method, args...)
 	if err != nil {
 		return err
 	}
@@ -68,14 +78,6 @@ func (c *Client) PlaceStorageOrder(fileCid cid.Cid, fileSize uint64, tip uint64)
 	accountInfo, err := c.getAccountInfo()
 	if err != nil {
 		return err
-	}
-
-	orderPrice, err := c.getOrderPrice(fileSize)
-	if err != nil {
-		return err
-	}
-	if orderPrice.Cmp(accountInfo.Data.Free.Int) > 0 {
-		return ErrBalanceNotEnough
 	}
 
 	o := types.SignatureOptions{
@@ -111,6 +113,28 @@ func (c *Client) PlaceStorageOrder(fileCid cid.Cid, fileSize uint64, tip uint64)
 	}
 }
 
+func (c *Client) PlaceStorageOrder(fileCid cid.Cid, fileSize uint64, tip uint64, needCalculate bool) error {
+	accountInfo, err := c.getAccountInfo()
+	if err != nil {
+		return err
+	}
+
+	orderPrice, err := c.getOrderPrice(fileSize)
+	if err != nil {
+		return err
+	}
+	if orderPrice.Cmp(accountInfo.Data.Free.Int) > 0 {
+		return ErrBalanceNotEnough
+	}
+	if needCalculate {
+		if err := c.Call("Market.calculate_reward", fileCid.String()); err != nil {
+			return xerrors.Errorf("Market.calculate_reward error: %s", err.Error())
+		}
+	}
+
+	return c.Call("Market.place_storage_order", fileCid.String(), fileSize, types.NewUCompactFromUInt(tip))
+}
+
 func (c *Client) GetFileInfo(fileCid cid.Cid) (*FileInfo, error) {
 	cidbs := []byte(fileCid.String())
 	bs := make([]byte, len(cidbs)+1)
@@ -130,6 +154,7 @@ func (c *Client) GetFileInfo(fileCid cid.Cid) (*FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if !ok {
 		return nil, ErrCidNotFound
 	}
@@ -236,5 +261,11 @@ func NewClient(wsUrl, secret string, timeout time.Duration) (*Client, error) {
 		meta:          meta,
 		submitTimeout: timeout,
 	}
+	//for _, module := range meta.AsMetadataV12.Modules {
+	//	fmt.Println("module name: ", module.Name)
+	//	for _, f := range module.Calls {
+	//		fmt.Printf("	%+v\n", f)
+	//	}
+	//}
 	return client, nil
 }
