@@ -7,18 +7,13 @@ import (
 	httpapi "github.com/ipfs/go-ipfs-http-client"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/schollz/progressbar/v3"
+	"time"
 
 	//"github.com/schollz/progressbar/v3"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"io"
 	"os"
 )
-
-type object struct {
-	Hash string
-}
-
-//https://github.com/schollz/progressbar
 
 var (
 	app          = kingpin.New("itsc", "command-line of icetrays client.")
@@ -31,14 +26,18 @@ var (
 	addUseCrust     = add.Flag("crust", "use crust network").Default("false").Bool()
 )
 
-type BarReader struct {
+type barReader struct {
 	file io.Reader
-	bar  io.Writer
+	bar  *progressbar.ProgressBar
 }
 
-func (b BarReader) Read(p []byte) (n int, err error) {
+func (b barReader) Read(p []byte) (n int, err error) {
 	_, _ = b.bar.Write(p)
-	return b.file.Read(p)
+	n, err = b.file.Read(p)
+	if err != nil {
+		_ = b.bar.Close()
+	}
+	return
 }
 
 func FsAdd(s *httpapi.HttpApi, path string) (string, error) {
@@ -51,17 +50,30 @@ func FsAdd(s *httpapi.HttpApi, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	bar := progressbar.DefaultBytes(
+	bar := progressbar.NewOptions64(
 		info.Size(),
-		fmt.Sprintf("uploading %s", path),
+		progressbar.OptionSetDescription(path),
+		progressbar.OptionSetWriter(os.Stdout),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSetWidth(10),
+		progressbar.OptionThrottle(65*time.Millisecond),
+		progressbar.OptionShowCount(),
+		progressbar.OptionOnCompletion(func() {
+			_, _ = fmt.Fprint(os.Stdout, "\n")
+		}),
+		progressbar.OptionSpinnerType(15),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionSetTheme(progressbar.Theme{
+			Saucer:        "=",
+			SaucerPadding: " ",
+			BarStart:      "|",
+			BarEnd:        "|",
+			SaucerHead:    ">",
+		}),
 	)
-	fr := files.NewReaderFile(BarReader{f, bar})
-	//d := files.NewMapDirectory(map[string]files.Node{"": fr}) // unwrapped on the other side
+	_ = bar.RenderBlank()
 
-	//fileReader := files.NewMultiFileReader(d, false)
-	//bs, err := ioutil.ReadAll(fileReader)
-	//fmt.Println(string(bs))
-	//return "", err
+	fr := files.NewReaderFile(barReader{f, bar})
 
 	re, err := s.Unixfs().Add(context.Background(), fr)
 	if err != nil {
