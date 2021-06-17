@@ -3,11 +3,13 @@ package consensus
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/raft"
 	"github.com/icetrays/icetrays/consensus/pb"
 	"github.com/icetrays/icetrays/consensus/state"
 	"github.com/icetrays/icetrays/datastore"
+	badger "github.com/ipfs/go-ds-badger"
 	httpapi "github.com/ipfs/go-ipfs-http-client"
 	"github.com/ipfs/go-log/v2"
 	"io"
@@ -28,8 +30,8 @@ type Fsm struct {
 	inconsistent bool
 }
 
-func NewFsm(store *datastore.BadgerDB, api *httpapi.HttpApi) (*Fsm, error) {
-	_state, err := state.NewFileTreeState(store, api.Dag())
+func NewFsm(store *datastore.BadgerDB, api *httpapi.HttpApi, id string, d *badger.Datastore) (*Fsm, error) {
+	_state, err := state.NewFileTreeState(store, id, api.Dag(), api.Pin(), api.Unixfs(), d)
 	if err != nil {
 		return nil, err
 	}
@@ -70,9 +72,10 @@ func (f *Fsm) Apply(log *raft.Log) interface{} {
 	var leader bool
 	for {
 		var err error
+		// todo  ctx ?
 		if f.State.MustGetRoot() == inss.Ctx.Next {
 			leader = true
-
+			fmt.Println("i am leader.")
 		} else {
 			err = commitFunction(inss.Instruction)
 			if err != nil {
@@ -104,6 +107,11 @@ func (f *Fsm) Snapshot() (raft.FSMSnapshot, error) {
 func (f *Fsm) Restore(closer io.ReadCloser) error {
 	defer closer.Close()
 	return f.State.Unmarshal(closer)
+}
+
+func (f *Fsm) StoreConfiguration(index uint64, config raft.Configuration) {
+	fmt.Println("receive raft LogConfiguration log...")
+	fmt.Printf("config index: %d, config servers: %v\n", index, config.Servers)
 }
 
 func (f *Fsm) Inconsistent() bool {

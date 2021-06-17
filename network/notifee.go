@@ -7,9 +7,14 @@ import (
 )
 
 type PeerHandler struct {
-	host host.Host
+	host      host.Host
+	connected func(peer string)
 }
 
 func (p *PeerHandler) HandlePeerFound(info peer.AddrInfo) {
-	_ = p.host.Connect(context.Background(), info)
+	err := p.host.Connect(context.Background(), info)
+	if err == nil {
+		p.connected(info.ID.String())
+	}
+
 }

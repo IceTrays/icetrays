@@ -2,10 +2,12 @@ package modules
 
 import (
 	"context"
+	"fmt"
 	"github.com/hashicorp/raft"
 	"github.com/icetrays/icetrays/consensus"
 	"github.com/icetrays/icetrays/datastore"
 	"github.com/icetrays/icetrays/network"
+	badger "github.com/ipfs/go-ds-badger"
 	httpapi "github.com/ipfs/go-ipfs-http-client"
 	p2praft "github.com/libp2p/go-libp2p-raft"
 	ma "github.com/multiformats/go-multiaddr"
@@ -32,6 +34,18 @@ func RaftConfig(js Config) *raft.Config {
 	cfg.SnapshotThreshold = 100
 	cfg.LogLevel = js.Raft.LogLevel
 	cfg.LocalID = raft.ServerID(js.P2P.Identity.PeerID)
+	//leaderNotifyCh := make(chan bool, 1)
+	//cfg.NotifyCh = leaderNotifyCh
+	//go func() {
+	//	select {
+	//	case lead := <-leaderNotifyCh:
+	//		if lead {
+	//			fmt.Println("become leader, enable write api")
+	//		} else {
+	//			fmt.Println("become follower, close write api")
+	//		}
+	//	}
+	//}()
 	return cfg
 }
 
@@ -49,15 +63,30 @@ func DataStore(lc fx.Lifecycle, js Config) (*datastore.BadgerDB, error) {
 	return d, err
 }
 
+func IpfsDataStore(lc fx.Lifecycle, js Config) (*badger.Datastore, error) {
+	d, err := badger.NewDatastore(js.IpfsDBPath, &badger.DefaultOptions)
+	if err != nil {
+		return nil, err
+	}
+	lc.Append(fx.Hook{
+		OnStart: nil,
+		OnStop: func(ctx context.Context) error {
+			return d.Close()
+		},
+	})
+	return d, err
+}
+
 func SnapshotStore() (raft.SnapshotStore, error) {
 	return raft.NewFileSnapshotStore("snapshot", 5, nil)
 }
 
-func Fsm(store *datastore.BadgerDB, api *httpapi.HttpApi) (*consensus.Fsm, error) {
-	return consensus.NewFsm(store, api)
+func Fsm(store *datastore.BadgerDB, api *httpapi.HttpApi, js Config, d *badger.Datastore) (*consensus.Fsm, error) {
+	return consensus.NewFsm(store, api, js.P2P.Identity.PeerID, d)
 }
 
 func IpfsClient(js Config) (*httpapi.HttpApi, error) {
+	fmt.Println("ipfs init addr: " + js.Ipfs)
 	addr, err := ma.NewMultiaddr(js.Ipfs)
 	if err != nil {
 		return nil, err
@@ -70,22 +99,35 @@ func Transport(n *network.Network) (raft.Transport, error) {
 }
 
 func Raft(lc fx.Lifecycle, conf *raft.Config, fsm *consensus.Fsm, snaps raft.SnapshotStore, trans raft.Transport, badger *datastore.BadgerDB, js Config) (*raft.Raft, error) {
-	servers := make([]raft.Server, len(js.Raft.Peers))
-	for i := 0; i < len(js.Raft.Peers); i++ {
-		servers[i] = raft.Server{
-			Suffrage: 0,
-			ID:       raft.ServerID(js.Raft.Peers[i]),
-			Address:  raft.ServerAddress(js.Raft.Peers[i]),
-		}
-	}
 	r, err := raft.NewRaft(conf, fsm, datastore.NewLogDB(badger), datastore.NewStableDB(badger), snaps, trans)
+	//time.Sleep(5*time.Second)
 	if err != nil {
 		return nil, err
 	}
-	_ = r.BootstrapCluster(raft.Configuration{Servers: servers})
+	if js.P2P.BootstrapId == js.P2P.Identity.PeerID {
+		configuration := raft.Configuration{
+			Servers: []raft.Server{
+				{
+					ID:      conf.LocalID,
+					Address: trans.LocalAddr(),
+				},
+			},
+		}
+		boot := r.BootstrapCluster(configuration)
+		if boot.Error() != nil {
+			fmt.Println(boot.Error())
+		}
+	}
+	fmt.Println(r.GetConfiguration().Configuration().Servers)
 	lc.Append(fx.Hook{
 		OnStart: nil,
 		OnStop: func(ctx context.Context) error {
+			fmt.Println("gg ing")
+			f := r.DemoteVoter(conf.LocalID, 0, 0)
+			if f.Error() != nil {
+				fmt.Println("gg fail")
+				fmt.Println(f.Error())
+			}
 			return r.Shutdown().Error()
 		},
 	})
@@ -101,7 +143,7 @@ func Node(lc fx.Lifecycle, r *raft.Raft, fsm *consensus.Fsm, js Config, net *net
 			return nil
 		},
 	})
-	return consensus.NewNode(ctx, r, fsm, js.P2P.Identity.PeerID, net, ipfs)
+	return consensus.NewNode(ctx, r, fsm, js.P2P.Identity.PeerID, js.P2P.BootstrapId, net, ipfs)
 }
 
 //type Clients struct {

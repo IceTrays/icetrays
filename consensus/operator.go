@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"context"
+	"fmt"
 	"github.com/icetrays/icetrays/consensus/pb"
 	"google.golang.org/grpc"
 	"time"
@@ -15,10 +16,13 @@ type Operator interface {
 	Rm(ctx context.Context, path string) error
 	MkDir(ctx context.Context, path string) error
 	Address() string
+	AddPeer(ctx context.Context, id string) error
+	PinFile(ctx context.Context, pinNode, cid, fileName string) error
 }
 
 type Sender interface {
 	Send(*pb.Instruction) error
+	AddVoter(nodeId string) error
 }
 
 type LocalOperator struct {
@@ -44,6 +48,14 @@ func (l *LocalOperator) MkDir(ctx context.Context, path string) error {
 
 func (l *LocalOperator) Address() string {
 	return l.addr
+}
+
+func (l *LocalOperator) AddPeer(ctx context.Context, id string) error {
+	return l.sender.AddVoter(id)
+}
+
+func (l *LocalOperator) PinFile(ctx context.Context, pinNode, cid, fileName string) error {
+	return l.operation(pb.Instruction_Pin, nil, pinNode, cid, fileName)
 }
 
 func NewLocalOperator(r Sender, address string) *LocalOperator {
@@ -104,6 +116,20 @@ func (r *RemoteOperator) Address() string {
 	return r.addr
 }
 
+func (r *RemoteOperator) AddPeer(ctx context.Context, id string) error {
+	fmt.Println(id + " add peer")
+	_, err := r.client.AddPeer(ctx, &pb.Node{Id: id})
+	return err
+}
+
+func (r *RemoteOperator) PinFile(ctx context.Context, pinNode, cid, fileName string) error {
+	_, err := r.client.Execute(ctx, &pb.Instruction{
+		Code:   pb.Instruction_Pin,
+		Params: []string{pinNode, cid},
+	})
+	return err
+}
+
 func NewRemoteOperator(conn grpc.ClientConnInterface, addr string) *RemoteOperator {
 	return &RemoteOperator{
 		client: NewRemoteExecuteClient(conn),
@@ -113,13 +139,22 @@ func NewRemoteOperator(conn grpc.ClientConnInterface, addr string) *RemoteOperat
 
 type FsOpServer struct {
 	operator Sender
+	node     *Node
 }
 
-func (f FsOpServer) Execute(ctx context.Context, instruction *pb.Instruction) (*pb.Empty, error) {
+func (f *FsOpServer) Execute(ctx context.Context, instruction *pb.Instruction) (*pb.Empty, error) {
 	err := f.operator.Send(instruction)
 	return &pb.Empty{}, err
 }
 
-func (f FsOpServer) mustEmbedUnimplementedRemoteExecuteServer() {
+func (f *FsOpServer) AddPeer(ctx context.Context, node *pb.Node) (*pb.Empty, error) {
+	err := f.node.SwitchOperator()
+	if err != nil {
+		return &pb.Empty{}, err
+	}
+	return &pb.Empty{}, f.node.operator.AddPeer(ctx, node.Id)
+}
+
+func (f *FsOpServer) mustEmbedUnimplementedRemoteExecuteServer() {
 
 }

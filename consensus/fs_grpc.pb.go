@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type RemoteExecuteClient interface {
 	Execute(ctx context.Context, in *pb.Instruction, opts ...grpc.CallOption) (*pb.Empty, error)
+	AddPeer(ctx context.Context, in *pb.Node, opts ...grpc.CallOption) (*pb.Empty, error)
 }
 
 type remoteExecuteClient struct {
@@ -39,11 +40,21 @@ func (c *remoteExecuteClient) Execute(ctx context.Context, in *pb.Instruction, o
 	return out, nil
 }
 
+func (c *remoteExecuteClient) AddPeer(ctx context.Context, in *pb.Node, opts ...grpc.CallOption) (*pb.Empty, error) {
+	out := new(pb.Empty)
+	err := c.cc.Invoke(ctx, "/pb.RemoteExecute/AddPeer", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RemoteExecuteServer is the server API for RemoteExecute service.
 // All implementations must embed UnimplementedRemoteExecuteServer
 // for forward compatibility
 type RemoteExecuteServer interface {
 	Execute(context.Context, *pb.Instruction) (*pb.Empty, error)
+	AddPeer(context.Context, *pb.Node) (*pb.Empty, error)
 	mustEmbedUnimplementedRemoteExecuteServer()
 }
 
@@ -53,6 +64,9 @@ type UnimplementedRemoteExecuteServer struct {
 
 func (UnimplementedRemoteExecuteServer) Execute(context.Context, *pb.Instruction) (*pb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Execute not implemented")
+}
+func (UnimplementedRemoteExecuteServer) AddPeer(context.Context, *pb.Node) (*pb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddPeer not implemented")
 }
 func (UnimplementedRemoteExecuteServer) mustEmbedUnimplementedRemoteExecuteServer() {}
 
@@ -85,6 +99,24 @@ func _RemoteExecute_Execute_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RemoteExecute_AddPeer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(pb.Node)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RemoteExecuteServer).AddPeer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.RemoteExecute/AddPeer",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RemoteExecuteServer).AddPeer(ctx, req.(*pb.Node))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RemoteExecute_ServiceDesc is the grpc.ServiceDesc for RemoteExecute service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -95,6 +127,10 @@ var RemoteExecute_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Execute",
 			Handler:    _RemoteExecute_Execute_Handler,
+		},
+		{
+			MethodName: "AddPeer",
+			Handler:    _RemoteExecute_AddPeer_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

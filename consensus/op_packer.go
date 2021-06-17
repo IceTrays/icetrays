@@ -11,6 +11,7 @@ var ErrShutdown = errors.New("packer shutdown")
 
 type Caller interface {
 	Call([]*pb.Instruction) []error
+	AddPeer(nodeId string) error
 }
 
 type FileOpRequest struct {
@@ -27,6 +28,11 @@ type OpPacker struct {
 	request  chan *FileOpRequest
 	shutdown bool
 	caller   Caller
+	node     Node
+}
+
+func (packer *OpPacker) AddVoter(nodeId string) error {
+	return packer.caller.AddPeer(nodeId)
 }
 
 func (packer *OpPacker) Send(ins *pb.Instruction) error {

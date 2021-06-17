@@ -22,7 +22,7 @@ type Config = struct {
 			PeerID  string `json:"peer_id"`
 			PrivKey string `json:"priv_key"`
 		} `json:"identity"`
-		Bootstrap      []string `json:"bootstrap" default:"[]"`
+		BootstrapId    string   `json:"bootstrap_id" default:""`
 		Listen         []string `json:"listen" default:"[\"/ip4/0.0.0.0/tcp/10040\"]"`
 		Secret         string   `json:"secret"`
 		EnableRelayHop bool     `json:"enable_relay_hop"`
@@ -32,11 +32,12 @@ type Config = struct {
 		EnableMdns     bool     `json:"enable_mdns" default:"true"`
 	} `json:"p2p"`
 
-	Ipfs   string `default:"/ip4/127.0.0.1/tcp/5001" json:"ipfs"`
-	DBPath string `default:"cluster-ds" json:"db_path"`
-	Raft   struct {
-		Peers    []string `json:"peers"`
-		LogLevel string   `default:"DEBUG" json:"log_level"`
+	Ipfs       string `default:"/ip4/127.0.0.1/tcp/5001" json:"ipfs"`
+	DBPath     string `default:"cluster-ds" json:"db_path"`
+	IpfsDBPath string `default:"cluster-ds" json:"ipfs_db_path"`
+	Raft       struct {
+		//Peers    []string `json:"peers"`
+		LogLevel string `default:"DEBUG" json:"log_level"`
 	} `json:"raft"`
 	Port int `json:"port"`
 }
@@ -47,6 +48,7 @@ func InitConfig() Config {
 	if err != nil {
 		panic(err)
 	}
+	// generate p2p identity
 	if config.P2P.Identity.PrivKey == "" {
 		fmt.Println("KeyPair not found, GenerateEd25519Key...")
 		priv, _, err := crypto.GenerateEd25519Key(rand.Reader)

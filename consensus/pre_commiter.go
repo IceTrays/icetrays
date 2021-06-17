@@ -23,11 +23,17 @@ type OnlyOneCanDo interface {
 	RollBack(shot state.SnapShot) error
 }
 
+//type IpfsExecutor interface {
+//	PinCidFile(ctx context.Context, cid cid.Cid) error
+//}
+
 type preCommitter struct {
 	*raft.Raft
 	preExecutor OnlyOneCanDo
+	//ipfsExecutor IpfsExecutor
 }
 
+// Call leader先做 做好了发送给flower
 func (r preCommitter) Call(instructions []*pb.Instruction) []error {
 	errs := make([]error, len(instructions))
 	copyIns := make([]*pb.Instruction, 0, len(instructions))
@@ -64,6 +70,11 @@ func (r preCommitter) Call(instructions []*pb.Instruction) []error {
 	default:
 		return errs
 	}
+}
+
+func (r preCommitter) AddPeer(nodeId string) error {
+	addFuture := r.AddVoter(raft.ServerID(nodeId), raft.ServerAddress(nodeId), 0, 0)
+	return addFuture.Error()
 }
 
 func CopyError(err error, num int) []error {

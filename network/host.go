@@ -96,15 +96,17 @@ func NewHost(ctx context.Context, cfg NetConfig) (host.Host, error) {
 }
 
 type Network struct {
-	host  host.Host
-	mdns  discovery.Service
-	lock  sync.Mutex
-	conns map[string]*grpc.ClientConn
+	host      host.Host
+	mdns      discovery.Service
+	lock      sync.Mutex
+	conns     map[string]*grpc.ClientConn
+	peerFound map[string]string
 }
 
 func NewNetwork(cfg NetConfig) (*Network, error) {
 	net := &Network{
-		conns: map[string]*grpc.ClientConn{},
+		conns:     map[string]*grpc.ClientConn{},
+		peerFound: map[string]string{},
 	}
 	h, err := NewHost(context.Background(), cfg)
 	if err != nil {
@@ -112,12 +114,20 @@ func NewNetwork(cfg NetConfig) (*Network, error) {
 	}
 	net.host = h
 	if cfg.EnableMdns {
-		mdns, err := discovery.NewMdnsService(context.Background(), h, time.Second*20, "ipfs-fs-cluster")
+		mdns, err := discovery.NewMdnsService(context.Background(), h, time.Second*2, "ipfs-fs-cluster")
 		if err != nil {
 			panic(err)
 		}
 		handle := PeerHandler{
 			host: h,
+			connected: func(peer string) {
+				if _, ok := net.peerFound[peer]; ok {
+					return
+				}
+				net.lock.Lock()
+				defer net.lock.Unlock()
+				net.peerFound[peer] = ""
+			},
 		}
 		mdns.RegisterNotifee(&handle)
 		net.mdns = mdns
@@ -154,4 +164,9 @@ func (net *Network) Close() error {
 
 func (net *Network) Host() host.Host {
 	return net.host
+}
+
+func (net *Network) PeerFounded(peer string) bool {
+	_, ok := net.peerFound[peer]
+	return ok
 }
