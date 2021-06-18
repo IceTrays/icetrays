@@ -2,88 +2,80 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	files "github.com/ipfs/go-ipfs-files"
+	"github.com/icetrays/icetrays/types"
+	"github.com/ipfs/go-cid"
 	httpapi "github.com/ipfs/go-ipfs-http-client"
+	"github.com/ipfs/go-path"
 	ma "github.com/multiformats/go-multiaddr"
-	"github.com/schollz/progressbar/v3"
-	"time"
-
 	//"github.com/schollz/progressbar/v3"
 	"gopkg.in/alecthomas/kingpin.v2"
-	"io"
 	"os"
 )
+
+//var (
+//	iceTraysHome = "home"
+//	add = "add"
+//	addDir = "dir"
+//	addPath = "path"
+//	addPinDuplicate = "pin"
+//	addUseCrust = "crust"
+//)
 
 var (
 	app          = kingpin.New("itsc", "command-line of icetrays client.")
 	iceTraysHome = app.Flag("home", "home path").Default("./").Envar("ICETRAYS_HOME").String()
 
-	add             = app.Command("add", "Register a new user.")
+	add             = app.Command("add", "add new file to icetrays")
+	addPath         = add.Arg("file", "file or dir path").Required().String()
 	addDir          = add.Arg("dir", "dir to add").Required().String()
-	addPath         = add.Arg("path", "file or dir path").Required().String()
 	addPinDuplicate = add.Flag("pin", "pin duplicate").Default("-1").Int()
 	addUseCrust     = add.Flag("crust", "use crust network").Default("false").Bool()
 )
 
-type barReader struct {
-	file io.Reader
-	bar  *progressbar.ProgressBar
+type mockClient struct {
 }
 
-func (b barReader) Read(p []byte) (n int, err error) {
-	_, _ = b.bar.Write(p)
-	n, err = b.file.Read(p)
-	if err != nil {
-		_ = b.bar.Close()
+func (m mockClient) Cp(file cid.Cid, dir path.Path, info types.PinInfo) error {
+	if dir == "123" {
+		return errors.New("test error")
 	}
-	return
+	return nil
 }
 
-func FsAdd(s *httpapi.HttpApi, path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return "", err
-	}
-	bar := progressbar.NewOptions64(
-		info.Size(),
-		progressbar.OptionSetDescription(path),
-		progressbar.OptionSetWriter(os.Stdout),
-		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetWidth(10),
-		progressbar.OptionThrottle(65*time.Millisecond),
-		progressbar.OptionShowCount(),
-		progressbar.OptionOnCompletion(func() {
-			_, _ = fmt.Fprint(os.Stdout, "\n")
-		}),
-		progressbar.OptionSpinnerType(15),
-		progressbar.OptionFullWidth(),
-		progressbar.OptionSetTheme(progressbar.Theme{
-			Saucer:        "=",
-			SaucerPadding: " ",
-			BarStart:      "|",
-			BarEnd:        "|",
-			SaucerHead:    ">",
-		}),
-	)
-	_ = bar.RenderBlank()
-
-	fr := files.NewReaderFile(barReader{f, bar})
-
-	re, err := s.Unixfs().Add(context.Background(), fr)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(re.Cid().String())
-	return "", err
+func (m mockClient) Ls(dir path.Path) ([]types.LsFileInfo, error) {
+	panic("implement me")
 }
 
-func FsTest() {
+func (m mockClient) Mv(from path.Path, to path.Path) error {
+	panic("implement me")
+}
+
+func (m mockClient) Rm(dir path.Path) error {
+	panic("implement me")
+}
+
+func (m mockClient) Mkdir(dir path.Path) error {
+	panic("implement me")
+}
+
+func (m mockClient) Pin(info types.PinInfo) error {
+	panic("implement me")
+}
+
+func (m mockClient) UnPin(file cid.Cid) error {
+	panic("implement me")
+}
+
+func (m mockClient) Stat(cid cid.Cid) (types.LsFileInfo, error) {
+	panic("implement me")
+}
+
+func Run() {
+	intrh, ctx := SetupInterruptHandler(context.Background())
+	defer intrh.Close()
+
 	addr, err := ma.NewMultiaddr("/ip4/127.0.0.1/tcp/5001")
 	if err != nil {
 		panic(err)
@@ -92,11 +84,16 @@ func FsTest() {
 	if err != nil {
 		panic(err)
 	}
+	cmd := NewClientCommand(ctx, &mockClient{}, api)
 
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
-	// Register user
+
 	case add.FullCommand():
-		fmt.Println(FsAdd(api, *addPath))
+		err = cmd.Cp(*addPath, *addDir, *addPinDuplicate, *addUseCrust)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %s\n", err.Error())
+			os.Exit(1)
+		}
 
 	}
 }
