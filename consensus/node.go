@@ -88,12 +88,12 @@ func (n *Node) Operator() string {
 	return n.operator.Address()
 }
 
-func (n *Node) UploadFile(ctx context.Context, fileName string, pinCount int, read io.Reader) error {
+func (n *Node) UploadFile(ctx context.Context, pinCount int, read io.Reader) (string, error) {
 	add, err := n.ipfs.Unixfs().Add(ctx, files.NewReaderFile(read))
 	if err != nil {
-		return err
+		return "", err
 	}
-	fmt.Printf("fileName: %s, cid: %s", fileName, add.Cid().String())
+	fmt.Printf("cid: %s", add.Cid().String())
 
 	future := n.raft.GetConfiguration()
 	r2 := BytesToBinaryString(add.Cid().String())
@@ -101,11 +101,11 @@ func (n *Node) UploadFile(ctx context.Context, fileName string, pinCount int, re
 	counts := make([]int, 0)
 	peers := make(map[int][]string)
 	if err := future.Error(); err != nil {
-		return err
+		return "", err
 	} else {
 		servers := future.Configuration().Servers
 		if pinCount > len(servers) {
-			return errors.New("insufficient number of nodes")
+			return "", errors.New("insufficient number of nodes")
 		}
 		for _, d := range servers {
 			r1 := BytesToBinaryString(string(d.ID))
@@ -137,7 +137,11 @@ func (n *Node) UploadFile(ctx context.Context, fileName string, pinCount int, re
 	}
 
 	pn, _ := json.Marshal(rp)
-	return n.operator.PinFile(ctx, string(pn), add.Cid().String(), fileName)
+	return add.Cid().String(), n.operator.PinFile(ctx, string(pn), add.Cid().String())
+}
+
+func (n *Node) UnPin(ctx context.Context, cid string) error {
+	return n.operator.UnPinFile(ctx, cid)
 }
 
 func (n *Node) TrySwitchOperator() error {
@@ -195,7 +199,7 @@ func (n *Node) SwitchOperator() error {
 
 func NewNode(ctx context.Context, r *raft.Raft, fsm *Fsm, id string, bootstrapId string, net *network.Network, ipfs *httpapi.HttpApi) (*Node, error) {
 	node := &Node{
-		raft:        preCommitter{r, fsm.State},
+		raft:        preCommitter{r, id, fsm.State},
 		fsm:         fsm,
 		retryTimes:  3,
 		ID:          id,

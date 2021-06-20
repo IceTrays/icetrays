@@ -83,7 +83,6 @@ func Server2(node *consensus.Node, config Config) {
 			c.JSON(500, errors.New("gg"))
 			return
 		}
-		fileName := c.Query("fileName")
 		fileSize := c.Query("fileSize")
 		pinCount := c.Query("pinCount")
 		r, err := strconv.ParseInt(fileSize, 10, 64)
@@ -98,12 +97,12 @@ func Server2(node *consensus.Node, config Config) {
 			c.JSON(500, err.Error())
 			return
 		}
-		err = node.UploadFile(c, fileName, int(r2), fr)
+		cid, err := node.UploadFile(c, int(r2), fr)
 		if err != nil {
 			fmt.Println(err.Error())
 			c.JSON(500, err.Error())
 		} else {
-			c.JSON(200, "success")
+			c.JSON(200, cid)
 		}
 	})
 

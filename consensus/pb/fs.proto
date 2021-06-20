@@ -11,6 +11,7 @@ service RemoteExecute {
 message Ctx {
   string pre = 1;
   string next = 2;
+  string peer = 3;
 }
 
 message Empty{}
@@ -27,6 +28,7 @@ message Instruction {
     MKDIR = 3;
     Ls = 4;
     Pin = 5;
+    UnPin = 6;
   };
   Code code = 1;
   repeated string params = 2;

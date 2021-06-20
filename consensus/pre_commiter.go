@@ -23,14 +23,10 @@ type OnlyOneCanDo interface {
 	RollBack(shot state.SnapShot) error
 }
 
-//type IpfsExecutor interface {
-//	PinCidFile(ctx context.Context, cid cid.Cid) error
-//}
-
 type preCommitter struct {
 	*raft.Raft
+	id          string
 	preExecutor OnlyOneCanDo
-	//ipfsExecutor IpfsExecutor
 }
 
 // Call leader先做 做好了发送给flower
@@ -53,6 +49,7 @@ func (r preCommitter) Call(instructions []*pb.Instruction) []error {
 		Ctx: &pb.Ctx{
 			Pre:  snapshot.Root,
 			Next: after.Root,
+			Peer: r.id,
 		},
 	}
 	bs, err := proto.Marshal(&inss)

@@ -81,8 +81,16 @@ func SnapshotStore() (raft.SnapshotStore, error) {
 	return raft.NewFileSnapshotStore("snapshot", 5, nil)
 }
 
-func Fsm(store *datastore.BadgerDB, api *httpapi.HttpApi, js Config, d *badger.Datastore) (*consensus.Fsm, error) {
-	return consensus.NewFsm(store, api, js.P2P.Identity.PeerID, d)
+func Fsm(lc fx.Lifecycle, store *datastore.BadgerDB, api *httpapi.HttpApi, js Config, d *badger.Datastore) (*consensus.Fsm, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	lc.Append(fx.Hook{
+		OnStart: nil,
+		OnStop: func(ctx context.Context) error {
+			cancel()
+			return nil
+		},
+	})
+	return consensus.NewFsm(ctx, store, api, js.P2P.Identity.PeerID, d)
 }
 
 func IpfsClient(js Config) (*httpapi.HttpApi, error) {

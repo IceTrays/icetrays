@@ -16,7 +16,6 @@ import (
 	"github.com/ipfs/go-mfs"
 	"github.com/ipfs/go-unixfs"
 	iface "github.com/ipfs/interface-go-ipfs-core"
-	"github.com/ipfs/interface-go-ipfs-core/path"
 	"io"
 	"io/ioutil"
 	"os"
@@ -29,13 +28,10 @@ import (
 
 var ErrParamsNum = errors.New("params num error")
 
-const PinCid = "pinCid"
-const PinPeer = "pinPeer"
-
 type FileTreeState struct {
 	ID          string
 	dag         format.DAGService
-	pin         iface.PinAPI
+	pin         PinService
 	fs          iface.UnixfsAPI
 	root        *mfs.Root
 	store       datastore.StateDB
@@ -59,6 +55,8 @@ func (fts *FileTreeState) Execute(ins *pb.Instruction) error {
 		return fts.Mkdir(ins.GetParams()...)
 	case pb.Instruction_Pin:
 		return fts.PinCidFile(ins.GetParams()...)
+	case pb.Instruction_UnPin:
+		return fts.UnPinCidFile(ins.GetParams()...)
 	default:
 		return errors.New("unrecognized operation")
 	}
@@ -152,7 +150,7 @@ func (fts *FileTreeState) Mkdir(params ...string) error {
 }
 
 func (fts *FileTreeState) PinCidFile(params ...string) error {
-	if len(params) != 3 {
+	if len(params) != 2 {
 		return ErrParamsNum
 	}
 	cidBytes := []byte(params[0])
@@ -168,7 +166,7 @@ func (fts *FileTreeState) PinCidFile(params ...string) error {
 		if peer == fts.ID {
 			f = true
 		}
-		k = ds.KeyWithNamespaces([]string{PinPeer, peer})
+		k = ds.KeyWithNamespaces([]string{PinPeer, peer, params[0]})
 		err := fts.ipfsDb.Put(k, cidBytes)
 		if err != nil {
 			return err
@@ -177,21 +175,24 @@ func (fts *FileTreeState) PinCidFile(params ...string) error {
 	if !f {
 		return nil
 	}
-	c, err := cid.Decode(params[1])
+	return fts.IpfsPin(params[1])
+}
+
+func (fts *FileTreeState) UnPinCidFile(params ...string) error {
+	if len(params) != 1 {
+		return ErrParamsNum
+	}
+	k := ds.KeyWithNamespaces([]string{PinCid, params[0]})
+	_ = fts.ipfsDb.Delete(k)
+	return fts.pin.UnPin(fts.ID, params[0])
+}
+
+func (fts *FileTreeState) IpfsPin(cs string) error {
+	c, err := cid.Decode(cs)
 	if err != nil {
 		return err
 	}
-	err = fts.pin.Add(fts.ctx, path.IpfsPath(c))
-	if err != nil {
-		return err
-	}
-	cctx, cancel := context.WithTimeout(context.Background(), time.Second*20)
-	defer cancel()
-	ipldNode, err := fts.dag.Get(cctx, c)
-	if err != nil {
-		return err
-	}
-	return fts.cp(ipldNode.RawData(), params[2], params[1])
+	return fts.pin.PinCid(fts.ctx, c)
 }
 
 func (fts *FileTreeState) Rm(params ...string) error {
@@ -386,12 +387,12 @@ func (fts *FileTreeState) Unmarshal(reader io.Reader) error {
 	return nil
 }
 
-func NewFileTreeState(store datastore.StateDB, id string, dag format.DAGService, pin iface.PinAPI, fs iface.UnixfsAPI, d *badger.Datastore) (*FileTreeState, error) {
+func NewFileTreeState(ctx context.Context, store datastore.StateDB, id string, dag format.DAGService, pin iface.PinAPI, fs iface.UnixfsAPI, d *badger.Datastore) (*FileTreeState, error) {
 	s, err := store.LoadState()
 	state := &FileTreeState{
 		ID:     id,
 		dag:    dag,
-		pin:    pin,
+		pin:    PinService{PinAPI: pin, processing: make(map[string]*PinTask), ipfsDb: d},
 		fs:     fs,
 		store:  store,
 		ctx:    context.Background(),
@@ -413,6 +414,7 @@ func NewFileTreeState(store datastore.StateDB, id string, dag format.DAGService,
 		}
 		_ = state.EnsureStored()
 	}
+	go state.pin.Init(ctx)
 	return state, nil
 }
 

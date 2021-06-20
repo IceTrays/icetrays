@@ -17,7 +17,8 @@ type Operator interface {
 	MkDir(ctx context.Context, path string) error
 	Address() string
 	AddPeer(ctx context.Context, id string) error
-	PinFile(ctx context.Context, pinNode, cid, fileName string) error
+	PinFile(ctx context.Context, pinNode, cid string) error
+	UnPinFile(ctx context.Context, cid string) error
 }
 
 type Sender interface {
@@ -54,8 +55,12 @@ func (l *LocalOperator) AddPeer(ctx context.Context, id string) error {
 	return l.sender.AddVoter(id)
 }
 
-func (l *LocalOperator) PinFile(ctx context.Context, pinNode, cid, fileName string) error {
-	return l.operation(pb.Instruction_Pin, nil, pinNode, cid, fileName)
+func (l *LocalOperator) PinFile(ctx context.Context, pinNode, cid string) error {
+	return l.operation(pb.Instruction_Pin, nil, pinNode, cid)
+}
+
+func (l *LocalOperator) UnPinFile(ctx context.Context, cid string) error {
+	return l.operation(pb.Instruction_UnPin, nil, cid)
 }
 
 func NewLocalOperator(r Sender, address string) *LocalOperator {
@@ -122,10 +127,18 @@ func (r *RemoteOperator) AddPeer(ctx context.Context, id string) error {
 	return err
 }
 
-func (r *RemoteOperator) PinFile(ctx context.Context, pinNode, cid, fileName string) error {
+func (r *RemoteOperator) PinFile(ctx context.Context, pinNode, cid string) error {
 	_, err := r.client.Execute(ctx, &pb.Instruction{
 		Code:   pb.Instruction_Pin,
 		Params: []string{pinNode, cid},
+	})
+	return err
+}
+
+func (r *RemoteOperator) UnPinFile(ctx context.Context, cid string) error {
+	_, err := r.client.Execute(ctx, &pb.Instruction{
+		Code:   pb.Instruction_UnPin,
+		Params: []string{cid},
 	})
 	return err
 }

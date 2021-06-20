@@ -32,14 +32,14 @@ func T(fsm *consensus.Fsm, r *raft.Raft, node *consensus.Node) {
 		for range ticker.C {
 			fmt.Println(fsm.State.Root())
 
-			future := r.GetConfiguration()
-			if err := future.Error(); err != nil {
-				fmt.Println(err.Error())
-			} else {
-				for _, d := range future.Configuration().Servers {
-					fmt.Println(d.ID)
-				}
-			}
+			//future := r.GetConfiguration()
+			//if err := future.Error(); err != nil {
+			//	fmt.Println(err.Error())
+			//} else {
+			//	for _, d := range future.Configuration().Servers {
+			//		fmt.Println(d.ID)
+			//	}
+			//}
 		}
 	}()
 }

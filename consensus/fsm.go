@@ -30,15 +30,15 @@ type Fsm struct {
 	inconsistent bool
 }
 
-func NewFsm(store *datastore.BadgerDB, api *httpapi.HttpApi, id string, d *badger.Datastore) (*Fsm, error) {
-	_state, err := state.NewFileTreeState(store, id, api.Dag(), api.Pin(), api.Unixfs(), d)
+func NewFsm(ctx context.Context, store *datastore.BadgerDB, api *httpapi.HttpApi, id string, d *badger.Datastore) (*Fsm, error) {
+	_state, err := state.NewFileTreeState(ctx, store, id, api.Dag(), api.Pin(), api.Unixfs(), d)
 	if err != nil {
 		return nil, err
 	}
 	return &Fsm{
 		client:       api,
 		State:        _state,
-		ctx:          context.Background(),
+		ctx:          ctx,
 		inconsistent: false,
 	}, nil
 }
@@ -47,6 +47,7 @@ func (f *Fsm) Apply(log *raft.Log) interface{} {
 	if log.Type != raft.LogCommand {
 		return nil
 	}
+	fmt.Printf("receive log: %v\n", log)
 	var err error
 	index := f.State.Index()
 	if log.Index < index {
@@ -72,8 +73,7 @@ func (f *Fsm) Apply(log *raft.Log) interface{} {
 	var leader bool
 	for {
 		var err error
-		// todo  ctx ?
-		if f.State.MustGetRoot() == inss.Ctx.Next {
+		if f.State.ID == inss.Ctx.Peer {
 			leader = true
 			fmt.Println("i am leader.")
 		} else {
