@@ -10,6 +10,7 @@ import (
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-datastore/query"
 	badger "github.com/ipfs/go-ds-badger"
 	format "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
@@ -149,6 +150,7 @@ func (fts *FileTreeState) Mkdir(params ...string) error {
 	})
 }
 
+// PinCidFile params[0] cid, params[1] peerList
 func (fts *FileTreeState) PinCidFile(params ...string) error {
 	if len(params) != 2 {
 		return ErrParamsNum
@@ -246,7 +248,7 @@ func (fts *FileTreeState) MustGetRoot() string {
 }
 
 func (fts *FileTreeState) Marshal(writer io.Writer) error {
-	_, err := writer.Write([]byte(fts.String()))
+	_, err := writer.Write([]byte(fts.MarshalString()))
 	return err
 }
 
@@ -254,6 +256,16 @@ func (fts *FileTreeState) String() string {
 	d := SnapShot{
 		Index: fts.Index(),
 		Root:  fts.MustGetRoot(),
+	}
+	data, _ := json.Marshal(d)
+	return string(data)
+}
+
+func (fts *FileTreeState) MarshalString() string {
+	d := SnapShot{
+		Index:   fts.Index(),
+		Root:    fts.MustGetRoot(),
+		PinTask: fts.IpfsSnapShot(),
 	}
 	data, _ := json.Marshal(d)
 	return string(data)
@@ -349,6 +361,19 @@ func walkDirectory(ctx context.Context, dir *mfs.Directory, visited map[string]b
 func (fts *FileTreeState) EnsureStored() error {
 	visited := make(map[string]bool)
 	return walkDirectory(fts.ctx, fts.root.GetDirectory(), visited)
+}
+
+func (fts *FileTreeState) IpfsSnapShot() map[string][]byte {
+	r1, err := fts.ipfsDb.Query(query.Query{Prefix: PinTaskStatus})
+	if err != nil {
+		fmt.Printf("ipfs snapShot fail:%+v\n", err)
+		return nil
+	}
+	r := make(map[string][]byte, 0)
+	for t := range r1.Next() {
+		r[t.Key] = t.Value
+	}
+	return r
 }
 
 func (fts *FileTreeState) Unmarshal(reader io.Reader) error {
@@ -448,8 +473,9 @@ func getParentDir(root *mfs.Root, dir string) (*mfs.Directory, error) {
 }
 
 type SnapShot struct {
-	Index uint64 `json:"index"`
-	Root  string `json:"root"`
+	Index   uint64            `json:"index"`
+	Root    string            `json:"root"`
+	PinTask map[string][]byte `json:"pinTask"`
 }
 
 func (ss SnapShot) String() string {

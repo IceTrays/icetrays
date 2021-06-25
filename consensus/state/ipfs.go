@@ -16,20 +16,32 @@ import (
 )
 
 const (
-	PinCid        = "pinCid"
-	PinPeer       = "pinPeer"
-	PinUnfinished = "PinUnfinished"
+	// PinCid /PinCid/cid
+	PinCid = "pinCid"
+	// PinPeer /PinPeer/cid/peer
+	PinPeer = "pinPeer"
+	// PinTaskStatus /PinTaskStatus/cid
+	PinTaskStatus = "PinTaskStatus"
 
 	MaxRetryCount    = 5
 	ScheduleInterval = 300 * time.Second
 )
 
+type ss int
+
+const (
+	PinUnFinished ss = iota
+	PinFinished
+	PinFail
+)
+
 type PinTask struct {
-	ctx   context.Context
-	c     cid.Cid
-	retry int
-	done  func(err error)
-	close func()
+	ctx    context.Context
+	c      cid.Cid
+	retry  int
+	done   func(err error)
+	close  func()
+	status ss
 }
 
 type PinService struct {
@@ -40,7 +52,7 @@ type PinService struct {
 }
 
 func NewPinTask(ctx context.Context, c cid.Cid, db *badger.Datastore) (*PinTask, error) {
-	sk := ds.KeyWithNamespaces([]string{PinUnfinished, c.String()})
+	sk := ds.KeyWithNamespaces([]string{PinTaskStatus, c.String()})
 	done := func(err error) {
 		v, de := db.Get(sk)
 		if de != nil {
@@ -53,26 +65,29 @@ func NewPinTask(ctx context.Context, c cid.Cid, db *badger.Datastore) (*PinTask,
 			fmt.Printf("illegal value: %s\n", c.String())
 			return
 		}
+		var r []byte
 		if task.retry >= MaxRetryCount {
 			fmt.Printf("key:%s reached max number of retries\n", c.String())
-			return
-		}
-		if err != nil {
-			fmt.Printf("pin task finished success, cid:%s\n", c.String())
-			_ = db.Delete(sk)
+			task.status = PinFail
 		} else {
-			task.retry = task.retry + 1
-			r, _ := json.Marshal(task)
-			_ = db.Put(sk, r)
+			if err != nil {
+				fmt.Printf("pin task finished success, cid:%s\n", c.String())
+				task.status = PinFinished
+			} else {
+				task.retry = task.retry + 1
+			}
 		}
+		r, _ = json.Marshal(task)
+		_ = db.Put(sk, r)
 	}
 	ctx, cs := context.WithCancel(ctx)
 	task := &PinTask{
-		ctx:   ctx,
-		c:     c,
-		retry: 0,
-		done:  done,
-		close: cs,
+		ctx:    ctx,
+		c:      c,
+		retry:  0,
+		done:   done,
+		close:  cs,
+		status: PinUnFinished,
 	}
 	r, _ := json.Marshal(task)
 	err := db.Put(sk, r)
@@ -84,7 +99,7 @@ func NewPinTask(ctx context.Context, c cid.Cid, db *badger.Datastore) (*PinTask,
 
 func (p *PinService) Init(ctx context.Context) {
 	checkFunc := func() {
-		results, err := p.ipfsDb.Query(query.Query{Prefix: PinUnfinished})
+		results, err := p.ipfsDb.Query(query.Query{Prefix: PinTaskStatus})
 		if err != nil {
 			panic(err)
 		}
@@ -167,7 +182,7 @@ func (p *PinService) delete(key string) {
 	if v, ok := p.processing[key]; ok {
 		v.close()
 		delete(p.processing, key)
-		_ = p.ipfsDb.Delete(ds.KeyWithNamespaces([]string{PinUnfinished, key}))
+		_ = p.ipfsDb.Delete(ds.KeyWithNamespaces([]string{PinTaskStatus, key}))
 	}
 }
 

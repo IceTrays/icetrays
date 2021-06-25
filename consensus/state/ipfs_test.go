@@ -7,7 +7,7 @@ import (
 )
 
 func TestKey(t *testing.T) {
-	sk := ds.KeyWithNamespaces([]string{PinUnfinished, "xxx"})
+	sk := ds.KeyWithNamespaces([]string{PinTaskStatus, "xxx"})
 	n := sk.Namespaces()
 	for _, k := range n {
 		fmt.Println(k)
