@@ -2,7 +2,6 @@ package consensus
 
 import (
 	"errors"
-	"github.com/icetrays/icetrays/consensus/pb"
 	"sync"
 	"time"
 )
@@ -10,12 +9,12 @@ import (
 var ErrShutdown = errors.New("packer shutdown")
 
 type Caller interface {
-	Call([]*pb.Instruction) []error
+	Call([]*Instruction) []error
 }
 
 type FileOpRequest struct {
 	done chan *FileOpRequest
-	ins  *pb.Instruction
+	ins  *Instruction
 	err  error
 }
 
@@ -29,7 +28,7 @@ type OpPacker struct {
 	caller   Caller
 }
 
-func (packer *OpPacker) Send(ins *pb.Instruction) error {
+func (packer *OpPacker) Send(ins *Instruction) error {
 	call, err := packer.send(ins)
 	if err != nil {
 		return err
@@ -39,7 +38,7 @@ func (packer *OpPacker) Send(ins *pb.Instruction) error {
 	return call.err
 }
 
-func (packer *OpPacker) send(ins *pb.Instruction) (*FileOpRequest, error) {
+func (packer *OpPacker) send(ins *Instruction) (*FileOpRequest, error) {
 	packer.mtx.Lock()
 	if packer.shutdown == true {
 		return nil, ErrShutdown
@@ -82,7 +81,7 @@ func (packer *OpPacker) Backend(commitTimeout time.Duration, max int) {
 
 func (packer *OpPacker) Commit() {
 	if len(packer.cache) != 0 {
-		inss := make([]*pb.Instruction, len(packer.cache))
+		inss := make([]*Instruction, len(packer.cache))
 		for index, call := range packer.cache {
 			inss[index] = call.ins
 		}

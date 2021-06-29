@@ -1,0 +1,25 @@
+// protoc --gogo_out=. --go-grpc_out=.  consensus/rpc.proto
+syntax = "proto3";
+//option go_package = "icetrays/types/pb";
+package consensus;
+// The greeting service definition.
+service RemoteExecute {
+  rpc Execute (Instruction) returns (Empty) {}
+}
+
+message Instruction {
+  uint32 code = 1;
+  bytes params = 2;
+}
+
+message Instructions {
+  repeated Instruction instruction = 1;
+  Ctx ctx = 2;
+}
+
+message Ctx {
+  string pre = 1;
+  string next = 2;
+}
+
+message Empty{}

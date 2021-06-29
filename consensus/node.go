@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"github.com/hashicorp/raft"
-	"github.com/icetrays/icetrays/consensus/pb"
 	"github.com/icetrays/icetrays/network"
+	"github.com/icetrays/icetrays/types"
 	"github.com/ipfs/go-cid"
 	httpapi "github.com/ipfs/go-ipfs-http-client"
 	"github.com/ipfs/go-mfs"
@@ -29,7 +29,7 @@ type Node struct {
 	packer     Sender
 }
 
-func (n *Node) Op(ctx context.Context, code pb.Instruction_Code, params ...string) error {
+func (n *Node) Op(ctx context.Context, code types.InstructionCode, params ...string) error {
 	if n.fsm.Inconsistent() {
 		return errors.New("inconsistent state")
 	}
@@ -39,7 +39,7 @@ func (n *Node) Op(ctx context.Context, code pb.Instruction_Code, params ...strin
 		return err
 	}
 	switch code {
-	case pb.Instruction_CP:
+	case types.InstructionCP:
 		if strings.HasPrefix(params[1], "/") {
 			return n.operator.Cp(ctx, params[0], params[1], nil)
 		} else {
@@ -55,11 +55,11 @@ func (n *Node) Op(ctx context.Context, code pb.Instruction_Code, params ...strin
 			}
 			return n.operator.Cp(ctx, params[0], params[1], ipldNode.RawData())
 		}
-	case pb.Instruction_MV:
+	case types.InstructionMV:
 		return n.operator.Mv(ctx, params[0], params[1])
-	case pb.Instruction_RM:
+	case types.InstructionRM:
 		return n.operator.Rm(ctx, params[0])
-	case pb.Instruction_MKDIR:
+	case types.InstructionMKDIR:
 		return n.operator.MkDir(ctx, params[0])
 	default:
 		return errors.New("no matched operator")

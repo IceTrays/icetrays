@@ -1,0 +1,37 @@
+// protoc --gogo_out=. types/params.proto
+syntax = "proto3";
+//option go_package = "icetrays/types/pb";
+package types;
+
+
+message CpParams {
+  string path = 1;
+  string cid = 2;
+  bytes nodeData = 3;
+  uint32 pinNums = 4;
+  bool crust = 5;
+}
+
+message MvParams {
+  string from = 1;
+  string to = 2;
+}
+
+message RmParams {
+  string path = 1;
+}
+
+message MkdirParams {
+  string path = 1;
+}
+
+message PinParams {
+  string cid = 1;
+  uint32 pinNums = 2;
+  bool crust = 3;
+}
+
+message UnpinParams {
+  string cid = 1;
+}
+

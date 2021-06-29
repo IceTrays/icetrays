@@ -5,8 +5,6 @@ import (
 	"errors"
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/raft"
-	"github.com/icetrays/icetrays/consensus/pb"
-	"github.com/icetrays/icetrays/consensus/state"
 	"github.com/icetrays/icetrays/datastore"
 	httpapi "github.com/ipfs/go-ipfs-http-client"
 	"github.com/ipfs/go-log/v2"
@@ -23,13 +21,13 @@ func init() {
 
 type Fsm struct {
 	client       *httpapi.HttpApi
-	State        *state.FileTreeState
+	State        *FileTreeState
 	ctx          context.Context
 	inconsistent bool
 }
 
 func NewFsm(store *datastore.BadgerDB, api *httpapi.HttpApi) (*Fsm, error) {
-	_state, err := state.NewFileTreeState(store, api.Dag())
+	_state, err := NewFileTreeState(store, api.Dag())
 	if err != nil {
 		return nil, err
 	}
@@ -54,11 +52,11 @@ func (f *Fsm) Apply(log *raft.Log) interface{} {
 		f.inconsistent = false
 		return ErrInconsistent
 	}
-	inss := &pb.Instructions{}
+	inss := &Instructions{}
 	if err = proto.Unmarshal(log.Data, inss); err != nil {
 		return err
 	}
-	commitFunction := func(insList []*pb.Instruction) error {
+	commitFunction := func(insList []*Instruction) error {
 		for _, ins := range insList {
 			if err := f.State.Execute(ins); err != nil {
 				return err
@@ -111,7 +109,7 @@ func (f *Fsm) Inconsistent() bool {
 }
 
 type Snapshot struct {
-	state *state.FileTreeState
+	state *FileTreeState
 }
 
 func (s *Snapshot) Persist(sink raft.SnapshotSink) error {

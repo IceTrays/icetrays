@@ -7,7 +7,7 @@ import (
 
 type PinInfo struct {
 	Cid      cid.Cid
-	PinCount int
+	PinCount uint32
 	Crust    bool
 }
 

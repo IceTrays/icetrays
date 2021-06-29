@@ -3,24 +3,22 @@ package consensus
 import (
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/raft"
-	"github.com/icetrays/icetrays/consensus/pb"
-	"github.com/icetrays/icetrays/consensus/state"
 	"time"
 )
 
 type Executor interface {
-	Execute(ins *pb.Instruction) error
+	Execute(ins *Instruction) error
 	StartPreExecute() string
 	EndPreExecute()
 	FailedPreExecute(s string, retry bool) error
 }
 
 type OnlyOneCanDo interface {
-	Lock() state.SnapShot
-	Execute(ins *pb.Instruction) error
-	UnLock() state.SnapShot
-	SnapShot() state.SnapShot
-	RollBack(shot state.SnapShot) error
+	Lock() SnapShot
+	Execute(ins *Instruction) error
+	UnLock() SnapShot
+	SnapShot() SnapShot
+	RollBack(shot SnapShot) error
 }
 
 type preCommitter struct {
@@ -28,9 +26,9 @@ type preCommitter struct {
 	preExecutor OnlyOneCanDo
 }
 
-func (r preCommitter) Call(instructions []*pb.Instruction) []error {
+func (r preCommitter) Call(instructions []*Instruction) []error {
 	errs := make([]error, len(instructions))
-	copyIns := make([]*pb.Instruction, 0, len(instructions))
+	copyIns := make([]*Instruction, 0, len(instructions))
 	snapshot := r.preExecutor.Lock()
 	for index, ins := range instructions {
 		errs[index] = r.preExecutor.Execute(ins)
@@ -42,9 +40,9 @@ func (r preCommitter) Call(instructions []*pb.Instruction) []error {
 	for r.preExecutor.RollBack(snapshot) != nil {
 		time.Sleep(time.Second)
 	}
-	inss := pb.Instructions{
+	inss := Instructions{
 		Instruction: copyIns,
-		Ctx: &pb.Ctx{
+		Ctx: &Ctx{
 			Pre:  snapshot.Root,
 			Next: after.Root,
 		},

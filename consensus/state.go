@@ -1,12 +1,13 @@
-package state
+package consensus
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/icetrays/icetrays/consensus/pb"
+	"github.com/golang/protobuf/proto"
 	"github.com/icetrays/icetrays/datastore"
+	"github.com/icetrays/icetrays/types"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	format "github.com/ipfs/go-ipld-format"
@@ -36,16 +37,25 @@ type FileTreeState struct {
 	PreExecuted bool
 }
 
-func (fs *FileTreeState) Execute(ins *pb.Instruction) error {
+func (fs *FileTreeState) Execute(ins *Instruction) error {
 	switch ins.GetCode() {
-	case pb.Instruction_CP:
-		return fs.cp(ins.GetNode(), ins.GetParams()...)
-	case pb.Instruction_MV:
-		return fs.Mv(ins.GetParams()...)
-	case pb.Instruction_RM:
-		return fs.Rm(ins.GetParams()...)
-	case pb.Instruction_MKDIR:
-		return fs.Mkdir(ins.GetParams()...)
+	case types.InstructionCP:
+		params := types.CpParams{}
+		_ = proto.Unmarshal(ins.GetParams(), &params)
+		// todo
+		return fs.cp(params.GetPath(), params.GetCid(), params.GetNodeData())
+	case types.InstructionMV:
+		params := types.MvParams{}
+		_ = proto.Unmarshal(ins.GetParams(), &params)
+		return fs.mv(params.GetFrom(), params.GetTo())
+	case types.InstructionRM:
+		params := types.RmParams{}
+		_ = proto.Unmarshal(ins.GetParams(), &params)
+		return fs.rm(params.GetPath())
+	case types.InstructionMKDIR:
+		params := types.MkdirParams{}
+		_ = proto.Unmarshal(ins.GetParams(), &params)
+		return fs.mkdir(params.GetPath())
 	default:
 		return errors.New("unrecognized operation")
 	}
@@ -97,37 +107,28 @@ func (fs *FileTreeState) resolvePath(path string, nodeData []byte) (format.Node,
 	return format.DefaultBlockDecoder.Decode(blk)
 }
 
-func (fs *FileTreeState) cp(nodeData []byte, params ...string) error {
-	if len(params) != 2 {
-		return ErrParamsNum
-	}
-	node, err := fs.resolvePath(params[1], nodeData)
+func (fs *FileTreeState) cp(dir, file string, nodeData []byte) error {
+	node, err := fs.resolvePath(file, nodeData)
 	if err != nil {
 		return err
 	}
-	return mfs.PutNode(fs.root, params[0], node)
+	return mfs.PutNode(fs.root, dir, node)
 }
 
-func (fs *FileTreeState) Mv(params ...string) error {
-	if len(params) != 2 {
-		return ErrParamsNum
-	}
-	src, err := checkPath(params[0])
+func (fs *FileTreeState) mv(srcPath, dstPath string) error {
+	src, err := checkPath(srcPath)
 	if err != nil {
 		return err
 	}
-	dst, err := checkPath(params[1])
+	dst, err := checkPath(dstPath)
 	if err != nil {
 		return err
 	}
 	return mfs.Mv(fs.root, src, dst)
 }
 
-func (fs *FileTreeState) Mkdir(params ...string) error {
-	if len(params) != 1 {
-		return ErrParamsNum
-	}
-	src, err := checkPath(params[0])
+func (fs *FileTreeState) mkdir(dir string) error {
+	src, err := checkPath(dir)
 	if err != nil {
 		return err
 	}
@@ -138,11 +139,8 @@ func (fs *FileTreeState) Mkdir(params ...string) error {
 	})
 }
 
-func (fs *FileTreeState) Rm(params ...string) error {
-	if len(params) != 1 {
-		return ErrParamsNum
-	}
-	dir, name := gopath.Split(params[0])
+func (fs *FileTreeState) rm(dir string) error {
+	dir, name := gopath.Split(dir)
 
 	pdir, err := getParentDir(fs.root, dir)
 	if err != nil {
