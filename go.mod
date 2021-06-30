@@ -3,10 +3,10 @@ module github.com/icetrays/icetrays
 go 1.16
 
 require (
-	github.com/centrifuge/go-substrate-rpc-client/v3 v3.0.0
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/alecthomas/units v0.0.0-20190717042225-c3de453c63f4 // indirect
 	github.com/benbjohnson/clock v1.0.3 // indirect
+	github.com/centrifuge/go-substrate-rpc-client/v3 v3.0.0
 	github.com/dgraph-io/badger/v3 v3.2011.1
 	github.com/gin-gonic/gin v1.7.2
 	github.com/gogo/protobuf v1.3.2
@@ -28,7 +28,7 @@ require (
 	github.com/ipfs/go-log/v2 v2.1.3
 	github.com/ipfs/go-merkledag v0.3.2
 	github.com/ipfs/go-mfs v0.1.2
-	github.com/ipfs/go-path v0.0.9 // indirect
+	github.com/ipfs/go-path v0.0.9
 	github.com/ipfs/go-unixfs v0.2.4
 	github.com/jinzhu/configor v1.2.1
 	github.com/json-iterator/go v1.1.10 // indirect
@@ -48,12 +48,12 @@ require (
 	github.com/polydawn/refmt v0.0.0-20190809202753-05966cbd336a // indirect
 	github.com/schollz/progressbar/v3 v3.8.0
 	github.com/smartystreets/assertions v1.0.1 // indirect
-	github.com/smartystreets/goconvey v1.6.4 // indirect
 	github.com/warpfork/go-wish v0.0.0-20200122115046-b9ea61034e4a // indirect
 	github.com/whyrusleeping/cbor-gen v0.0.0-20200710004633-5379fc63235d // indirect
 	go.uber.org/fx v1.13.1
+	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 	google.golang.org/grpc v1.38.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 )
 
-replace github.com/centrifuge/go-substrate-rpc-client/v3 => github.com/icetrays/go-substrate-rpc-client/v3 v3.0.1-0.20210530144125-db499b9b5408
+replace github.com/centrifuge/go-substrate-rpc-client/v3 => github.com/icetrays/go-substrate-rpc-client/v3 v3.0.1-0.20210630094919-8a9864fe4ede
