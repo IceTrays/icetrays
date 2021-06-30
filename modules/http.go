@@ -1,11 +1,12 @@
 package modules
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/icetrays/icetrays/consensus"
-	"github.com/icetrays/icetrays/consensus/pb"
+	"github.com/icetrays/icetrays/types"
+	"github.com/ipfs/go-path"
 	"github.com/multiformats/go-multiaddr"
 	manet "github.com/multiformats/go-multiaddr/net"
 	"net/http"
@@ -35,59 +36,114 @@ func Server2(node *consensus.Node, config Config) error {
 	reverseProxy := httputil.NewSingleHostReverseProxy(ipfsUrl)
 	reverseProxy.Transport = http.DefaultTransport
 
-	// Query string parameters are parsed using the existing underlying request object.
-	// The request responds to a url matching:  /welcome?firstname=Jane&lastname=Doe
-	router.POST("/icetrays", func(c *gin.Context) {
-		d, err := c.GetRawData()
+	router.POST("/itscp", func(c *gin.Context) {
+		params := &types.RequestCpParams{}
+		err := c.MustBindWith(params, binding.JSON)
 		if err != nil {
 			return
 		}
-		op := &Op{}
-		err = json.Unmarshal(d, op)
+		err = node.Cp(c, params.File, path.Path(params.Dir), types.PinInfo{
+			Cid:      params.File,
+			PinCount: uint32(params.PinCount),
+			Crust:    params.Crust,
+		})
 		if err != nil {
-			c.JSON(200, err.Error())
+			_ = c.AbortWithError(http.StatusBadRequest, err)
+			return
 		}
-		switch op.Op {
-		case "ls":
-			n, _ := node.Ls(c, op.Params[0])
-			c.JSON(200, n)
-		case "cp":
-			err := node.Op(c, pb.Instruction_CP, op.Params[0], op.Params[1])
-			if err != nil {
-				c.JSON(200, err.Error())
-			} else {
-				c.JSON(200, "success")
-			}
-		case "mv":
-			err := node.Op(c, pb.Instruction_MV, op.Params[0], op.Params[1])
-			if err != nil {
-				c.JSON(200, err.Error())
-			} else {
-				c.JSON(200, "success")
-			}
-		case "rm":
-			err := node.Op(c, pb.Instruction_RM, op.Params[0])
-			if err != nil {
-				c.JSON(200, err.Error())
-			} else {
-				c.JSON(200, "success")
-			}
-		case "mkdir":
-			err := node.Op(c, pb.Instruction_MKDIR, op.Params[0])
-			if err != nil {
-				c.JSON(200, err.Error())
-			} else {
-				c.JSON(200, "success")
-			}
-		default:
-			c.JSON(200, "???")
-		}
+		c.JSON(200, "")
 	})
+	router.POST("/itsls", func(c *gin.Context) {
+		params := &types.RequestLsParams{}
+		err := c.MustBindWith(params, binding.JSON)
+		if err != nil {
+			return
+		}
+		files, err := node.Ls(c, path.Path(params.Dir))
+		if err != nil {
+			_ = c.AbortWithError(http.StatusBadRequest, err)
+			return
+		}
+		c.JSON(200, files)
+	})
+	router.POST("/itsmv", func(c *gin.Context) {
+		params := &types.RequestMvParams{}
+		err := c.MustBindWith(params, binding.JSON)
+		if err != nil {
+			return
+		}
+		err = node.Mv(c, path.Path(params.Src), path.Path(params.Dst))
+		if err != nil {
+			_ = c.AbortWithError(http.StatusBadRequest, err)
+			return
+		}
+		c.JSON(200, "")
+	})
+	router.POST("/itsrm", func(c *gin.Context) {
+		params := &types.RequestRmParams{}
+		err := c.MustBindWith(params, binding.JSON)
+		if err != nil {
+			return
+		}
+		err = node.Rm(c, path.Path(params.Dir))
+		if err != nil {
+			_ = c.AbortWithError(http.StatusBadRequest, err)
+			return
+		}
+		c.JSON(200, "")
+	})
+
+	router.POST("/itsmkdir", func(c *gin.Context) {
+		params := &types.RequestRmParams{}
+		err := c.MustBindWith(params, binding.JSON)
+		if err != nil {
+			return
+		}
+		err = node.Mkdir(c, path.Path(params.Dir))
+		if err != nil {
+			_ = c.AbortWithError(http.StatusBadRequest, err)
+			return
+		}
+		c.JSON(200, "")
+	})
+
+	router.POST("/itspin", func(c *gin.Context) {
+		params := &types.RequestPinParams{}
+		err := c.MustBindWith(params, binding.JSON)
+		if err != nil {
+			return
+		}
+		err = node.Pin(c, types.PinInfo{
+			Cid:      params.File,
+			PinCount: uint32(params.PinCount),
+			Crust:    params.Crust,
+		})
+		if err != nil {
+			_ = c.AbortWithError(http.StatusBadRequest, err)
+			return
+		}
+		c.JSON(200, "")
+	})
+
+	router.POST("/itsunpin", func(c *gin.Context) {
+		params := &types.RequestUnPinParams{}
+		err := c.MustBindWith(params, binding.JSON)
+		if err != nil {
+			return
+		}
+		err = node.UnPin(c, params.File)
+		if err != nil {
+			_ = c.AbortWithError(http.StatusBadRequest, err)
+			return
+		}
+		c.JSON(200, "")
+	})
+
 	var proxyHandle = func(c *gin.Context) {
 		reverseProxy.ServeHTTP(c.Writer, c.Request)
 	}
-	router.POST("/", proxyHandle)
-	router.GET("/", proxyHandle)
+
+	router.NoRoute(proxyHandle)
 	go router.Run(fmt.Sprintf(":%d", config.Port))
 	return nil
 }

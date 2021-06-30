@@ -12,11 +12,11 @@ type PinInfo struct {
 }
 
 type LsFileInfo struct {
-	Name      string
-	Size      int64
-	IsDir     bool
-	PinNodes  []string
-	CrustInfo InfoInCrust
+	Name      string      `json:"name"`
+	Size      int64       `json:"size"`
+	IsDir     bool        `json:"is_dir"`
+	PinNodes  []string    `json:"pin_nodes"`
+	CrustInfo InfoInCrust `json:"crust_info"`
 }
 
 type InfoInCrust struct {

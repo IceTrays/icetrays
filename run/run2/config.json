@@ -17,7 +17,7 @@
 		"grace_period": 120000000000,
 		"enable_mdns": true
 	},
-	"ipfs": "/ip4/127.0.0.1/tcp/5002",
+	"ipfs": "/ip4/127.0.0.1/tcp/5001",
 	"db_path": "cluster-ds",
 	"raft": {
 		"peers": [

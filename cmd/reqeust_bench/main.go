@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/icetrays/icetrays/types"
+	"github.com/ipfs/go-cid"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
@@ -15,21 +17,22 @@ func main() {
 
 	group := sync.WaitGroup{}
 	rand.Seed(time.Now().Unix())
+	ccid, _ := cid.Decode("QmUDGEHazhJTackj9HpaaebAsLWbAk9R26SRHhPtjfa7Bn")
 	for i := 0; i < 1000000; i++ {
 		time.Sleep(time.Second / 10)
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			params := struct {
-				Op     string   `json:"op"`
-				Params []string `json:"params"`
-			}{}
-			params.Op = "cp"
 			s := randomString(5)
-			params.Params = []string{s, "QmayKQWJgWmr46DqWseADyUanmqxh662hPNdAkdHRjiQQH"}
+			params := types.RequestCpParams{
+				Dir:      s,
+				File:     ccid,
+				PinCount: 0,
+				Crust:    false,
+			}
 			bs, _ := json.Marshal(params)
 
-			req, err := http.NewRequest("POST", "http://127.0.0.1:10087/fs", bytes.NewReader(bs))
+			req, err := http.NewRequest("POST", "http://127.0.0.1:10088/itscp", bytes.NewReader(bs))
 			if err != nil {
 				fmt.Println(err.Error())
 				return

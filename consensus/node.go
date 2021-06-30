@@ -2,16 +2,14 @@ package consensus
 
 import (
 	"context"
-	"errors"
 	"github.com/hashicorp/raft"
 	"github.com/icetrays/icetrays/network"
 	"github.com/icetrays/icetrays/types"
 	"github.com/ipfs/go-cid"
 	httpapi "github.com/ipfs/go-ipfs-http-client"
-	"github.com/ipfs/go-mfs"
+	"github.com/ipfs/go-path"
 	gostream "github.com/libp2p/go-libp2p-gostream"
 	"google.golang.org/grpc"
-	"strings"
 	"sync"
 	"time"
 )
@@ -29,45 +27,61 @@ type Node struct {
 	packer     Sender
 }
 
-func (n *Node) Op(ctx context.Context, code types.InstructionCode, params ...string) error {
-	if n.fsm.Inconsistent() {
-		return errors.New("inconsistent state")
-	}
-
-	err := n.TrySwitchOperator()
+func (n *Node) Cp(ctx context.Context, file cid.Cid, dir path.Path, info types.PinInfo) error {
+	cctx, cancel := context.WithTimeout(ctx, time.Second*20)
+	defer cancel()
+	ipldNode, err := n.ipfs.Dag().Get(cctx, file)
 	if err != nil {
 		return err
 	}
-	switch code {
-	case types.InstructionCP:
-		if strings.HasPrefix(params[1], "/") {
-			return n.operator.Cp(ctx, params[0], params[1], nil)
-		} else {
-			c, err := cid.Decode(params[1])
-			if err != nil {
-				return err
-			}
-			cctx, cancel := context.WithTimeout(ctx, time.Second*20)
-			defer cancel()
-			ipldNode, err := n.ipfs.Dag().Get(cctx, c)
-			if err != nil {
-				return err
-			}
-			return n.operator.Cp(ctx, params[0], params[1], ipldNode.RawData())
-		}
-	case types.InstructionMV:
-		return n.operator.Mv(ctx, params[0], params[1])
-	case types.InstructionRM:
-		return n.operator.Rm(ctx, params[0])
-	case types.InstructionMKDIR:
-		return n.operator.MkDir(ctx, params[0])
-	default:
-		return errors.New("no matched operator")
+	if err := n.TrySwitchOperator(); err != nil {
+		return err
 	}
+	return n.operator.Cp(ctx, file, dir, info.PinCount, info.Crust, ipldNode.RawData())
 }
 
-func (n *Node) Ls(ctx context.Context, path string) ([]mfs.NodeListing, error) {
-	return n.fsm.State.Ls(ctx, path)
+func (n *Node) Ls(ctx context.Context, dir path.Path) ([]types.LsFileInfo, error) {
+	// TODO
+	return nil, nil
+}
+
+func (n *Node) Mv(ctx context.Context, from path.Path, to path.Path) error {
+	if err := n.TrySwitchOperator(); err != nil {
+		return err
+	}
+	return n.operator.Mv(ctx, from, to)
+}
+
+func (n *Node) Rm(ctx context.Context, dir path.Path) error {
+	if err := n.TrySwitchOperator(); err != nil {
+		return err
+	}
+	return n.operator.Rm(ctx, dir)
+}
+
+func (n *Node) Mkdir(ctx context.Context, dir path.Path) error {
+	if err := n.TrySwitchOperator(); err != nil {
+		return err
+	}
+	return n.operator.Mkdir(ctx, dir)
+}
+
+func (n *Node) Pin(ctx context.Context, info types.PinInfo) error {
+	if err := n.TrySwitchOperator(); err != nil {
+		return err
+	}
+	return n.operator.Pin(ctx, info)
+}
+
+func (n *Node) UnPin(ctx context.Context, file cid.Cid) error {
+	if err := n.TrySwitchOperator(); err != nil {
+		return err
+	}
+	return n.operator.UnPin(ctx, file)
+}
+
+func (n *Node) Stat(ctx context.Context, cid cid.Cid) (types.LsFileInfo, error) {
+	panic("implement me")
 }
 
 func (n *Node) Leader() string {
@@ -128,6 +142,7 @@ func NewNode(ctx context.Context, r *raft.Raft, fsm *Fsm, id string, net *networ
 	s1 := grpc.NewServer()
 
 	RegisterRemoteExecuteServer(s1, FsOpServer{operator: packer})
+	// todo error handle
 	go s1.Serve(listener)
 	return node, err
 }
