@@ -3,6 +3,7 @@ module github.com/icetrays/icetrays
 go 1.16
 
 require (
+	github.com/centrifuge/go-substrate-rpc-client/v3 v3.0.0
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/alecthomas/units v0.0.0-20190717042225-c3de453c63f4 // indirect
 	github.com/benbjohnson/clock v1.0.3 // indirect
@@ -54,3 +55,5 @@ require (
 	google.golang.org/grpc v1.38.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 )
+
+replace github.com/centrifuge/go-substrate-rpc-client/v3 => github.com/icetrays/go-substrate-rpc-client/v3 v3.0.1-0.20210530144125-db499b9b5408
